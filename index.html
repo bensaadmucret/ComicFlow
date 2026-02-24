@@ -1,148 +1,748 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CBZ Viewer</title>
+  <title>ComicFlow | Premium CBZ Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body {
+    :root {
+      --bg-color: #0f172a;
+      --surface-color: rgba(30, 41, 59, 0.7);
+      --accent-color: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
       margin: 0;
-      font-family: Arial, sans-serif;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background-color: #1c1c1c;
-      color: white;
     }
-    #viewer {
+
+    /* Ambient Background */
+    .ambient-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -1;
+      background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+    }
+
+    /* Header */
+    header {
+      height: 64px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-color);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--glass-border);
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo span {
+      color: var(--accent-color);
+    }
+
+    /* Main Layout */
+    main {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Sidebar Settings */
+    .sidebar {
+      width: 280px;
+      background: var(--surface-color);
+      backdrop-filter: blur(12px);
+      border-right: 1px solid var(--glass-border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      transform: translateX(-100%);
+      transition: var(--transition);
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      z-index: 5;
+    }
+
+    .sidebar.active {
+      transform: translateX(0);
+    }
+
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .setting-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .toggle-group {
+      display: flex;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 4px;
+    }
+
+    .toggle-btn {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .toggle-btn.active {
+      background: var(--accent-color);
+      color: var(--bg-color);
+    }
+
+    /* Viewer Area */
+    .viewer-container {
+      flex: 1;
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 80vh;
-      width: 100%;
+      padding: 24px;
+      overflow: hidden;
+      gap: 4px;
     }
-    #viewer img {
+
+    .comic-page {
       max-width: 100%;
       max-height: 100%;
+      object-fit: contain;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      transition: opacity 0.2s ease-in-out;
+      opacity: 0;
+      display: none;
     }
-    .controls {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin: 10px;
+
+    .comic-page.active {
+      display: block;
     }
-    button {
-      padding: 10px;
-      font-size: 16px;
+
+    .comic-page.loaded {
+      opacity: 1;
+    }
+
+    #comicImage2 {
+      border-left: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Controls Overlay */
+    .nav-overlay {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 15%;
       cursor: pointer;
-      background-color: #333;
-      color: white;
-      border: none;
-      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: var(--transition);
+      z-index: 2;
     }
-    button:disabled {
-      opacity: 0.5;
+
+    .nav-overlay:hover {
+      opacity: 1;
+      background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent);
+    }
+
+    .nav-overlay.next {
+      right: 0;
+      --rot: 135deg;
+    }
+
+    .nav-overlay.next:hover {
+      background: linear-gradient(to left, rgba(255, 255, 255, 0.05), transparent);
+    }
+
+    /* Fullscreen icons for navigation */
+    .nav-overlay::after {
+      content: '';
+      width: 40px;
+      height: 40px;
+      border-top: 4px solid white;
+      border-left: 4px solid white;
+      opacity: 0.3;
+      transition: var(--transition);
+    }
+
+    .nav-overlay.prev::after {
+      transform: rotate(-45deg);
+      margin-right: 20px;
+    }
+
+    .nav-overlay.next::after {
+      transform: rotate(135deg);
+      margin-left: 20px;
+    }
+
+    .nav-overlay:hover::after {
+      opacity: 0.8;
+      transform: scale(1.1) rotate(var(--rot));
+    }
+
+    /* Footer / Navigation */
+    footer {
+      height: 80px;
+      background: var(--surface-color);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--glass-border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      z-index: 10;
+    }
+
+    .nav-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--glass-border);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: var(--transition);
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.3;
       cursor: not-allowed;
+    }
+
+    .progress-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent-color);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .page-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Drop Zone */
+    #dropZone {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(56, 189, 248, 0.1);
+      backdrop-filter: blur(8px);
+      border: 4px dashed var(--accent-color);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #dropZone.active {
+      display: flex;
+    }
+
+    .drop-icon {
+      font-size: 48px;
+    }
+
+    /* Utilities */
+    .hidden {
+      display: none !important;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      transition: var(--transition);
+    }
+
+    .icon-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Fullscreen Mode Improvements */
+    body.is-fullscreen header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      transform: translateY(-100%);
+      transition: var(--transition);
+      background: linear-gradient(to bottom, rgba(15, 23, 42, 0.9), transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: none;
+    }
+
+    body.is-fullscreen footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      transform: translateY(100%);
+      transition: var(--transition);
+      background: linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent);
+      backdrop-filter: blur(8px);
+      border-top: none;
+    }
+
+    body.is-fullscreen header:hover,
+    body.is-fullscreen.show-controls header {
+      transform: translateY(0);
+    }
+
+    body.is-fullscreen footer:hover,
+    body.is-fullscreen.show-controls footer {
+      transform: translateY(0);
+    }
+
+    body.is-fullscreen main {
+      padding-top: 0;
+    }
+
+    body.is-fullscreen .viewer-container {
+      padding: 0;
+      background: black;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 100%;
+      }
+
+      .nav-overlay {
+        width: 25%;
+      }
+
+      .nav-btn span {
+        display: none;
+      }
     }
   </style>
 </head>
+
 <body>
-  <h1>CBZ Viewer</h1>
-  <input type="file" id="fileInput" accept=".cbz" />
-  <div id="viewer">
-    <img id="currentImage" alt="No image loaded" />
+  <div class="ambient-bg"></div>
+
+  <div id="dropZone">
+    <div class="drop-icon">📚</div>
+    <h2>Déposez votre fichier CBZ ici</h2>
   </div>
-  <div class="controls">
-    <button id="prevButton" disabled>Previous</button>
-    <button id="fullscreenButton">Fullscreen</button>
-    <button id="nextButton" disabled>Next</button>
-  </div>
+
+  <header>
+    <div class="logo">
+      <button id="toggleSidebar" class="icon-btn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      Comic<span>Flow</span>
+    </div>
+    <div class="actions">
+      <input type="file" id="fileInput" accept=".cbz" class="hidden" />
+      <button onclick="document.getElementById('fileInput').click()" class="nav-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span>Ouvrir</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar" class="sidebar">
+      <div class="setting-group">
+        <div class="setting-label">Mode de lecture</div>
+        <div class="toggle-group">
+          <div id="modeNormal" class="toggle-btn active" onclick="setReadingMode('normal')">Comic</div>
+          <div id="modeManga" class="toggle-btn" onclick="setReadingMode('manga')">Manga</div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label">Affichage</div>
+        <div class="toggle-group">
+          <div id="viewSingle" class="toggle-btn active" onclick="setViewMode('single')">Simple</div>
+          <div id="viewDouble" class="toggle-btn" onclick="setViewMode('double')">Double</div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <button id="fullscreenBtn" class="nav-btn" style="width: 100%; justify-content: center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3">
+            </path>
+          </svg>
+          Plein écran
+        </button>
+      </div>
+    </aside>
+
+    <div class="viewer-container" id="viewerContainer">
+      <div class="nav-overlay prev" id="overlayPrev"></div>
+      <img id="comicImage1" class="comic-page active" alt="" />
+      <img id="comicImage2" class="comic-page" alt="" />
+      <div class="nav-overlay next" id="overlayNext"></div>
+    </div>
+  </main>
+
+  <footer>
+    <button id="prevBtn" class="nav-btn" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+      <span>Précédent</span>
+    </button>
+
+    <div class="progress-container">
+      <div class="page-info">
+        <span id="fileName">Aucun fichier</span>
+        <span id="pageCounter">0 / 0</span>
+      </div>
+      <div class="progress-bar">
+        <div id="progressBar" class="progress-fill"></div>
+      </div>
+    </div>
+
+    <button id="nextBtn" class="nav-btn" disabled>
+      <span>Suivant</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/jszip/dist/jszip.min.js"></script>
   <script>
+    // DOM Elements
     const fileInput = document.getElementById('fileInput');
-    const currentImage = document.getElementById('currentImage');
-    const prevButton = document.getElementById('prevButton');
-    const nextButton = document.getElementById('nextButton');
-    const fullscreenButton = document.getElementById('fullscreenButton');
+    const comicImage1 = document.getElementById('comicImage1');
+    const comicImage2 = document.getElementById('comicImage2');
+    const fileNameLabel = document.getElementById('fileName');
+    const pageCounter = document.getElementById('pageCounter');
+    const progressBar = document.getElementById('progressBar');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const toggleSidebar = document.getElementById('toggleSidebar');
+    const sidebar = document.getElementById('sidebar');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const dropZone = document.getElementById('dropZone');
 
-    let images = [];
-    let currentIndex = 0;
+    // State
+    let currentZip = null;
+    let imagesList = [];
+    let currentIndex = -1;
+    let readingMode = 'normal'; // 'normal' or 'manga'
+    let viewMode = 'single';    // 'single' or 'double'
+    let cache = new Map();      // Blob cache for performance
 
-    fileInput.addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (file) {
-        const zip = new JSZip();
-        const content = await zip.loadAsync(file);
-        images = Object.keys(content.files)
-          .filter((name) => name.match(/\.(jpe?g|png|gif)$/i))
-          .sort();
+    // Initialization
+    function init() {
+      setupEventListeners();
+    }
 
-        if (images.length > 0) {
-          currentIndex = 0;
-          loadImage();
-          updateButtons();
-        } else {
-          alert('No images found in the CBZ file.');
-        }
-      }
-    });
+    function setupEventListeners() {
+      fileInput.addEventListener('change', handleFileSelect);
+      toggleSidebar.addEventListener('click', () => sidebar.classList.toggle('active'));
+      prevBtn.addEventListener('click', () => navigate(-1));
+      nextBtn.addEventListener('click', () => navigate(1));
+      document.getElementById('overlayPrev').addEventListener('click', () => navigate(-1));
+      document.getElementById('overlayNext').addEventListener('click', () => navigate(1));
+      fullscreenBtn.addEventListener('click', toggleFullscreen);
 
-    function loadImage() {
-      const zip = new JSZip();
-      const file = fileInput.files[0];
-      zip.loadAsync(file).then((content) => {
-        const imagePath = images[currentIndex];
-        content.files[imagePath].async('blob').then((blob) => {
-          currentImage.src = URL.createObjectURL(blob);
-        });
+      // Keyboard Navigation
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') navigate(readingMode === 'normal' ? -1 : 1);
+        if (e.key === 'ArrowRight') navigate(readingMode === 'normal' ? 1 : -1);
+        if (e.key === 'f') toggleFullscreen();
+      });
+
+      // Drag & Drop
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('active');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+      document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('active');
+        if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
       });
     }
 
-    function updateButtons() {
-      prevButton.disabled = currentIndex === 0;
-      nextButton.disabled = currentIndex === images.length - 1;
+    async function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file) processFile(file);
     }
 
-    prevButton.addEventListener('click', () => {
-      if (currentIndex > 0) {
-        currentIndex--;
-        loadImage();
-        updateButtons();
-      }
-    });
+    async function processFile(file) {
+      try {
+        fileNameLabel.textContent = "Chargement...";
+        const zip = new JSZip();
+        currentZip = await zip.loadAsync(file);
 
-    nextButton.addEventListener('click', () => {
-      if (currentIndex < images.length - 1) {
-        currentIndex++;
-        loadImage();
-        updateButtons();
-      }
-    });
+        // Extract and sort images
+        imagesList = Object.keys(currentZip.files)
+          .filter(path => path.match(/\.(jpe?g|png|gif|webp)$/i))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
-    fullscreenButton.addEventListener('click', () => {
-      const viewer = document.getElementById('viewer');
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
+        if (imagesList.length === 0) {
+          alert("Aucune image trouvée dans ce fichier CBZ.");
+          fileNameLabel.textContent = "Aucun fichier";
+          return;
+        }
+
+        // Clear cache
+        cache.forEach(url => URL.revokeObjectURL(url));
+        cache.clear();
+
+        fileNameLabel.textContent = file.name;
+
+        // Restore progress
+        const savedIndex = localStorage.getItem(`progress_${file.name}`);
+        currentIndex = savedIndex ? Math.min(parseInt(savedIndex), imagesList.length - 1) : 0;
+
+        renderPage();
+      } catch (err) {
+        console.error(err);
+        alert("Erreur lors de l'ouverture du fichier.");
+        fileNameLabel.textContent = "Erreur";
+      }
+    }
+
+    async function renderPage() {
+      if (currentIndex < 0 || currentIndex >= imagesList.length) return;
+
+      comicImage1.classList.remove('loaded');
+      comicImage2.classList.remove('loaded');
+      comicImage2.classList.remove('active');
+
+      const isLastPage = currentIndex === imagesList.length - 1;
+      const showDouble = viewMode === 'double' && !isLastPage;
+
+      // First Page
+      const path1 = imagesList[currentIndex];
+      comicImage1.src = await getBlobUrl(path1);
+      comicImage1.classList.add('active');
+      comicImage1.onload = () => comicImage1.classList.add('loaded');
+
+      // Second Page (Spread)
+      if (showDouble) {
+        const path2 = imagesList[currentIndex + 1];
+        comicImage2.src = await getBlobUrl(path2);
+        comicImage2.classList.add('active');
+        comicImage2.onload = () => comicImage2.classList.add('loaded');
+
+        // Order depends on reading mode
+        if (readingMode === 'manga') {
+          comicImage1.style.order = 2;
+          comicImage2.style.order = 1;
+        } else {
+          comicImage1.style.order = 1;
+          comicImage2.style.order = 2;
+        }
       } else {
-        viewer.requestFullscreen();
+        comicImage1.style.order = 1;
       }
-    });
 
-    document.addEventListener('keydown', (event) => {
-      if (document.fullscreenElement) {
-        if (event.key === 'ArrowLeft' && currentIndex > 0) {
-          currentIndex--;
-          loadImage();
-          updateButtons();
-        } else if (event.key === 'ArrowRight' && currentIndex < images.length - 1) {
-          currentIndex++;
-          loadImage();
-          updateButtons();
+      // Update UI
+      const pageDisplay = showDouble ? `${currentIndex + 1}-${currentIndex + 2}` : `${currentIndex + 1}`;
+      pageCounter.textContent = `${pageDisplay} / ${imagesList.length}`;
+
+      const progress = ((currentIndex + (showDouble ? 2 : 1)) / imagesList.length) * 100;
+      progressBar.style.width = `${progress}%`;
+
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex >= imagesList.length - (showDouble ? 2 : 1);
+
+      // Save progress
+      localStorage.setItem(`progress_${fileNameLabel.textContent}`, currentIndex);
+
+      // Preload next pages
+      preloadNext(showDouble ? 2 : 1);
+    }
+
+    async function getBlobUrl(path) {
+      if (cache.has(path)) return cache.get(path);
+      const fileData = await currentZip.files[path].async('blob');
+      const url = URL.createObjectURL(fileData);
+      cache.set(path, url);
+      return url;
+    }
+
+    async function preloadNext(offset = 1) {
+      const nextIdx = currentIndex + offset;
+      if (nextIdx < imagesList.length) {
+        getBlobUrl(imagesList[nextIdx]);
+        if (viewMode === 'double' && nextIdx + 1 < imagesList.length) {
+          getBlobUrl(imagesList[nextIdx + 1]);
         }
       }
+    }
+
+    function navigate(dir) {
+      if (!currentZip) return;
+
+      const step = viewMode === 'double' ? 2 : 1;
+      let newIndex = currentIndex + (dir * step);
+
+      // Boundary checks
+      if (newIndex < 0) newIndex = 0;
+      if (newIndex >= imagesList.length) return; // Can't go past end
+
+      if (newIndex !== currentIndex) {
+        currentIndex = newIndex;
+        renderPage();
+      }
+    }
+
+    function setReadingMode(mode) {
+      readingMode = mode;
+      document.getElementById('modeNormal').classList.toggle('active', mode === 'normal');
+      document.getElementById('modeManga').classList.toggle('active', mode === 'manga');
+      if (viewMode === 'double') renderPage(); // Re-render for order shift
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      document.getElementById('viewSingle').classList.toggle('active', mode === 'single');
+      document.getElementById('viewDouble').classList.toggle('active', mode === 'double');
+      renderPage();
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    // Handle fullscreen change to apply/remove classes
+    document.addEventListener('fullscreenchange', () => {
+      const isFullscreen = !!document.fullscreenElement;
+      document.body.classList.toggle('is-fullscreen', isFullscreen);
+
+      if (isFullscreen) {
+        showControlsBriefly();
+      } else {
+        document.body.classList.remove('show-controls');
+      }
     });
+
+    let controlsTimeout;
+    function showControlsBriefly() {
+      if (!document.fullscreenElement) return;
+
+      document.body.classList.add('show-controls');
+      clearTimeout(controlsTimeout);
+      controlsTimeout = setTimeout(() => {
+        document.body.classList.remove('show-controls');
+      }, 3000);
+    }
+
+    document.addEventListener('mousemove', () => {
+      if (document.fullscreenElement) {
+        showControlsBriefly();
+      }
+    });
+
+    init();
   </script>
 </body>
+
 </html>
