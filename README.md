@@ -1,45 +1,46 @@
-# ComicFlow | Premium CBZ Viewer
+# ComicFlow | Lecteur CBZ Tauri
 
-ComicFlow est un visualiseur web moderne, performant et élégant pour les fichiers CBZ (Comic Book ZIP). Conçu pour offrir une expérience de lecture immersive, il transforme votre navigateur en un véritable lecteur de bandes dessinées.
+ComicFlow est désormais empaqueté en application desktop (Rust + Tauri) tout en conservant son interface web haut de gamme. On bénéficie ainsi d’un moteur natif pour gérer les gros CBZ, d’un mode lecture plein écran fidèle à la maquette validée et d’un historique multi-albums.
 
-## ✨ Fonctionnalités Premium
+![Aperçu ComicFlow](./comicflow-preview.png)
 
-- **🎨 Design Sophistiqué** : Interface moderne basée sur le "Glassmorphism" avec des effets de flou et une typographie raffinée (Inter).
-- **🚀 Performance Optimisée** :
-    - **Mise en cache intelligente** : Les images sont conservées en mémoire pour un accès instantané.
-    - **Préchargement (Prefetching)** : Anticipation de la lecture et chargement des pages suivantes en arrière-plan.
-- **📖 Modes de Lecture Avancés** :
-    - **Mode Manga (RTL)** : Inversion du sens de lecture pour les œuvres japonaises.
-    - **Mode Double-Page (Spread)** : Affichage de deux pages côte à côte pour une lecture naturelle sur grand écran.
-- **📺 Plein Écran Immersif** :
-    - Mode plein écran total avec auto-hide des contrôles.
-    - Apparition des menus au mouvement de la souris ou au survol.
-    - Indicateurs visuels de navigation latérale.
-- **💾 Persistance de la lecture** : Sauvegarde automatique de votre progression pour chaque fichier (via LocalStorage).
-- **🖱️ Ergonomie Intuitive** :
-    - Support du Glisser-Déposer (Drag & Drop) pour ouvrir des fichiers.
-    - Navigation au clavier (Flèches, Touche 'F').
-    - Barre latérale de paramètres escamotable.
+## ✨ Fonctionnalités principales
 
-## 🛠️ Technologies utilisées
+- **🎨 Poste de lecture Tailwind** : Interface "glass" avec sidebar configurable, aperçu statique et bouton **Commencer la lecture** qui ouvre l’overlay fullscreen.
+- **� Multi-sessions** :
+  - LRU embarqué côté Rust (5 albums récents).
+  - Picker "Derniers albums ouverts" avec couverture, progression et bouton *Reprendre*.
+- **🖼️ Couvertures & miniatures** : thumbnails générées via la crate `image`, utilisées dans la sidebar et l’historique.
+- **📖 Modes avancés** : lecture simple/double page, inversion manga, navigation clavier, drag & drop.
+- **� Préchargement natif** : commande Tauri `prepare_batch` pour chauffer les pages suivantes, fallback JSZip automatique si l’API native est indisponible.
+- **💾 Reprise instantanée** : progression synchronisée (commande `update_progress`) + stockage local pour le fallback web.
 
-- **HTML5 & CSS3** (Variables CSS, Flexbox, Backdrop-filter)
-- **Vanilla JavaScript** (ES6+)
-- **JSZip** : Décompression haute performance côté client.
-- **Google Fonts (Inter)** : Typographie optimisée pour la lecture.
+## 🛠️ Stack technique
 
-## 🚀 Utilisation
+- **Frontend** : HTML + Tailwind (CDN) + Vanilla JS (module).
+- **Backend** : Rust + Tauri 2, `zip`, `image`, `parking_lot`.
+- **Commandes exposées** : `load_cbz`, `resume_session`, `list_sessions`, `get_page`, `prepare_batch`, `get_thumbnail`, `update_progress`.
+- **Fallback** : JSZip reste actif si `window.__TAURI__` n’est pas injecté (mode web).
 
-1. Ouvrez `index.html` dans votre navigateur.
-2. Glissez-déposez un fichier CBZ ou utilisez le bouton "Ouvrir".
-3. Configurez vos préférences (Manga, Double-page) dans la barre latérale.
-4. Utilisez les flèches du clavier ou les zones cliquables sur les côtés pour naviguer.
+## 🚀 Utilisation (mode dev)
 
-## 📦 Installation
+1. Installer Rust + Tauri prerequisites.
+2. Dans la racine du projet, lancer `cargo tauri dev` (démarre aussi un `python3 -m http.server` pour servir `app/`).
+3. Dans la fenêtre Tauri :
+   - **Importer un CBZ** (bouton ou drag & drop).
+   - Ajuster les modes (classique/manga, simple/double).
+   - Cliquer sur **Commencer la lecture** pour passer en fullscreen overlay.
+4. Pour reprendre un album, utiliser la section *Derniers albums ouverts* dans la sidebar.
 
-Aucune installation complexe n'est requise. ComicFlow est une application "single-file" (plus JSZip) qui fonctionne directement dans tout navigateur moderne.
+## 📦 Build
 
-## ⚠️ Limitations
+```
+cargo tauri build
+```
+Les binaires natifs se retrouvent dans `src-tauri/target/release/`.
 
-- Formats supportés : `.cbz` (ZIP contenant des images).
-- Formats d'images supportés : JPG, PNG, GIF, WEBP.
+## ⚠️ Limitations actuelles
+
+- Formats supportés : `.cbz` (images JPG/PNG/GIF/WEBP).
+- L’historique multi-sessions repose sur l’application desktop (fallback web = session unique).
+- La documentation détaillée (`IMPLEMENTATION.md`) reste à régénérer suite aux derniers changements.
