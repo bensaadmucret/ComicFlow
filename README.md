@@ -1,6 +1,6 @@
 # ComicFlow | Lecteur CBZ Tauri
 
-ComicFlow est désormais empaqueté en application desktop (Rust + Tauri) tout en conservant son interface web haut de gamme. On bénéficie ainsi d’un moteur natif pour gérer les gros CBZ, d’un mode lecture plein écran fidèle à la maquette validée et d’un historique multi-albums.
+ComicFlow passe du prototype web à une application desktop complète : Rust + Tauri propulsent le moteur natif, tandis que l’interface Tailwind conserve son rendu premium. Résultat : les gros CBZ se chargent instantanément, la lecture plein écran reste fidèle aux maquettes et l’historique multi-albums est disponible dès l’ouverture.
 
 ![Aperçu ComicFlow](./comicflow-preview.png)
 
