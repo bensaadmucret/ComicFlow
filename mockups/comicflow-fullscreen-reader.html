@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComicFlow – Reader Mode</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Space Grotesk', 'sans-serif'],
+            body: ['DM Sans', 'sans-serif']
+          },
+          colors: {
+            obsidian: '#07070F',
+            slate: '#121426',
+            ember: '#FF7551',
+            glint: '#4BE4C9'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: radial-gradient(circle at 50% 30%, rgba(75, 228, 201, 0.2), transparent 45%),
+        radial-gradient(circle at 80% 10%, rgba(255, 117, 81, 0.1), transparent 40%),
+        #03030a;
+      min-height: 100vh;
+    }
+    .grain {
+      position: fixed;
+      inset: 0;
+      background-image: url('https://www.transparenttextures.com/patterns/crossword.png');
+      opacity: 0.07;
+      mix-blend-mode: screen;
+      pointer-events: none;
+      z-index: -1;
+    }
+    .page-panel {
+      aspect-ratio: 1 / 1.41;
+    }
+  </style>
+</head>
+
+<body class="h-full text-white">
+  <div class="grain"></div>
+
+  <main class="min-h-screen flex flex-col">
+    <!-- HUD réduit -->
+    <header class="flex items-center justify-between px-12 py-6 text-sm font-display tracking-[0.35em] text-white/60">
+      <span>ComicFlow · Mode Lecture</span>
+      <div class="flex items-center gap-4">
+        <span class="font-body tracking-normal">Chapitre 07 — Dernier Refuge</span>
+        <button class="px-4 py-2 rounded-full border border-white/20 hover:border-glint transition">Quitter</button>
+      </div>
+    </header>
+
+    <!-- Zone de lecture -->
+    <section class="flex-1 flex flex-col items-center justify-center px-12 pb-10">
+      <div class="w-full max-w-6xl flex flex-col gap-6">
+        <!-- Meta strip -->
+        <div class="flex items-center justify-between text-xs uppercase tracking-[0.4em] text-white/50 font-display">
+          <span>Page 12-13</span>
+          <div class="flex items-center gap-2 text-white/40">
+            <span>Mode Comic</span>
+            <span class="w-10 h-px bg-white/20"></span>
+            <span>Préchargement 2 pages</span>
+          </div>
+        </div>
+
+        <!-- Pages -->
+        <div class="relative border border-white/5 rounded-[2.7rem] bg-slate/50 backdrop-blur-xl p-8 shadow-[0_40px_120px_rgba(0,0,0,0.45)]">
+          <div class="absolute inset-0 pointer-events-none rounded-[2.7rem]" style="box-shadow: inset 0 0 120px rgba(0,0,0,0.35);"></div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <figure class="page-panel relative overflow-hidden border-[3px] border-[#c9d28a] bg-black/70">
+              <img src="082.jpg" alt="Planche comic" class="w-full h-full object-cover" />
+              <figcaption class="absolute top-4 left-5 text-xs font-display uppercase tracking-[0.4em] text-white/70">
+                Planche 12
+              </figcaption>
+            </figure>
+            <figure class="page-panel relative overflow-hidden border-[3px] border-[#c9d28a] bg-black/70">
+              <img src="082.jpg" alt="Planche comic" class="w-full h-full object-cover" />
+              <figcaption class="absolute top-4 right-5 text-xs font-display uppercase tracking-[0.4em] text-white/70">
+                Planche 13
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <!-- Contrôles -->
+        <div class="flex items-center justify-between text-sm font-body text-white/80">
+          <div class="flex items-center gap-3">
+            <button class="px-5 py-3 rounded-full border border-white/20 hover:border-glint transition">← Page
+              précédente</button>
+            <button class="px-5 py-3 rounded-full bg-glint text-obsidian font-semibold">Page suivante →</button>
+          </div>
+          <div class="flex items-center gap-6">
+            <button class="text-white/60 hover:text-white transition">Cmd ⌘ + ← / →</button>
+            <button class="text-white/60 hover:text-white transition">Masquer HUD</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Barre d'avancement -->
+    <footer class="px-12 pb-6">
+      <div class="w-full max-w-6xl mx-auto">
+        <div class="flex items-center justify-between text-xs uppercase tracking-[0.4em] text-white/50 font-display">
+          <span>Progression</span>
+          <span>12 / 48</span>
+        </div>
+        <div class="mt-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div class="h-full bg-gradient-to-r from-ember via-glint to-white w-1/3"></div>
+        </div>
+      </div>
+    </footer>
+  </main>
+</body>
+
+</html>

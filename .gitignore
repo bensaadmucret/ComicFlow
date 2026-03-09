@@ -1,0 +1,12 @@
+# macOS clutter
+.DS_Store
+
+# Tauri / Rust build output
+src-tauri/target/
+
+# Node / web build artifacts
+node_modules/
+app/dist/
+
+# Logs
+*.log
