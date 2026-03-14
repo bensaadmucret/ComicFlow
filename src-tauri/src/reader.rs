@@ -1,11 +1,14 @@
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self, File},
-    io::copy,
+    io::{copy, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{anyhow, Context, Result};
+use crate::progress_store::{ProgressInput, ProgressRecord, ProgressStore};
+use crate::webtoon::{CatalogChapter, WebtoonFetcher};
 use image::imageops::FilterType;
 use image::GenericImageView;
 use natord::compare;
@@ -18,10 +21,22 @@ use zip::ZipArchive;
 const MAX_SESSIONS: usize = 5;
 const THUMB_HEIGHT: u32 = 320;
 
-#[derive(Default)]
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, Session>>,
     order: Mutex<VecDeque<String>>,
+    progress: Arc<ProgressStore>,
+    session_root: PathBuf,
+    covers_root: PathBuf,
+}
+
+fn infer_extension(url: &str) -> String {
+    let trimmed = url.split('?').next().unwrap_or(url);
+    let ext = trimmed
+        .rsplit('.')
+        .next()
+        .map(|chunk| chunk.to_lowercase())
+        .filter(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp"));
+    ext.unwrap_or_else(|| "jpg".to_string())
 }
 
 fn generate_thumbnail(original: &Path) -> Result<PathBuf> {
@@ -42,6 +57,22 @@ fn generate_thumbnail(original: &Path) -> Result<PathBuf> {
 }
 
 impl SessionManager {
+    pub fn new(
+        progress_store: ProgressStore,
+        session_root: PathBuf,
+        covers_root: PathBuf,
+    ) -> Result<Self> {
+        fs::create_dir_all(&session_root).ok();
+        fs::create_dir_all(&covers_root).ok();
+        Ok(Self {
+            sessions: Mutex::new(HashMap::new()),
+            order: Mutex::new(VecDeque::new()),
+            progress: Arc::new(progress_store),
+            session_root,
+            covers_root,
+        })
+    }
+
     fn store_session(&self, session: Session) {
         let mut sessions = self.sessions.lock();
         let mut order = self.order.lock();
@@ -60,7 +91,44 @@ impl SessionManager {
     }
 
     pub fn load_cbz(&self, path: String) -> Result<LoadCbzResponse> {
-        let session = Session::from_cbz(Path::new(&path))?;
+        let identifier = format!("cbz:{}", path);
+        let resume = self.progress.get(&identifier)?;
+        let mut session = Session::from_cbz(
+            Path::new(&path),
+            &self.session_root,
+            &self.covers_root,
+            resume.as_ref().and_then(|entry| entry.cover_path.clone()),
+        )?;
+        if let Some(entry) = resume {
+            session.last_index = entry.last_index.min(session.pages.len().saturating_sub(1));
+        }
+        let response = session.to_response();
+        self.store_session(session);
+        Ok(response)
+    }
+
+    pub fn load_webtoon_session(
+        &self,
+        title: String,
+        chapter_url: String,
+        images: Vec<DownloadedImage>,
+    ) -> Result<LoadCbzResponse> {
+        if images.is_empty() {
+            return Err(anyhow!("Aucune page à enregistrer pour ce webtoon"));
+        }
+        let identifier = format!("webtoon:{}", chapter_url);
+        let resume = self.progress.get(&identifier)?;
+        let mut session = Session::from_webtoon(
+            title,
+            &chapter_url,
+            images,
+            &self.session_root,
+            &self.covers_root,
+            resume.as_ref().and_then(|entry| entry.cover_path.clone()),
+        )?;
+        if let Some(entry) = resume {
+            session.last_index = entry.last_index.min(session.pages.len().saturating_sub(1));
+        }
         let response = session.to_response();
         self.store_session(session);
         Ok(response)
@@ -136,6 +204,17 @@ impl SessionManager {
             .ok_or_else(|| anyhow!("Session inconnue"))?;
         session.last_index = index.min(session.pages.len().saturating_sub(1));
         touch_session(&mut order, session_id);
+
+        let input = ProgressInput {
+            id: session.identifier.clone(),
+            label: session.file_name.clone(),
+            source: session.source.clone(),
+            location: session.reference.clone(),
+            last_index: session.last_index,
+            total_pages: session.pages.len(),
+            cover_path: session.cover_public.clone(),
+        };
+        self.progress.save(input)?;
         Ok(())
     }
 
@@ -148,6 +227,32 @@ impl SessionManager {
             .filter_map(|id| sessions.get(id).map(|session| session.to_summary()))
             .collect()
     }
+    pub fn list_progress(&self) -> Result<Vec<ProgressRecord>> {
+        self.progress.list()
+    }
+
+    pub fn get_progress_entry(&self, id: &str) -> Result<Option<ProgressRecord>> {
+        self.progress.get(id)
+    }
+
+    pub fn clear_progress(&self, id: &str) -> Result<()> {
+        self.progress.clear(id)
+    }
+
+    pub fn restore_cbz_entry(&self, entry: &ProgressRecord) -> Result<Option<LoadCbzResponse>> {
+        if !Path::new(&entry.location).exists() {
+            return Ok(None);
+        }
+        let session = Session::from_cbz(
+            Path::new(&entry.location),
+            &self.session_root,
+            &self.covers_root,
+            entry.cover_path.clone(),
+        )?;
+        let response = session.to_response();
+        self.store_session(session);
+        Ok(Some(response))
+    }
 }
 
 #[derive(Clone)]
@@ -157,11 +262,20 @@ struct Session {
     pages: Vec<PageEntry>,
     file_name: String,
     cover_thumbnail: Option<PathBuf>,
+    cover_public: Option<String>,
     last_index: usize,
+    source: String,
+    reference: String,
+    identifier: String,
 }
 
 impl Session {
-    fn from_cbz(path: &Path) -> Result<Self> {
+    fn from_cbz(
+        path: &Path,
+        session_root: &Path,
+        covers_root: &Path,
+        existing_cover: Option<String>,
+    ) -> Result<Self> {
         let file = File::open(path).with_context(|| format!("Impossible d'ouvrir {:?}", path))?;
         let mut archive = ZipArchive::new(file).context("Archive CBZ invalide")?;
 
@@ -180,11 +294,12 @@ impl Session {
         image_entries.sort_by(|a, b| compare(&a.0, &b.0));
 
         let session_id = Uuid::new_v4().to_string();
-        let session_dir = session_base_dir().join(&session_id);
+        let session_dir = session_root.join(&session_id);
         fs::create_dir_all(&session_dir)?;
 
         let mut pages = Vec::with_capacity(image_entries.len());
         let mut cover_thumbnail = None;
+        let mut public_cover = existing_cover;
         for (idx, (name, entry_index)) in image_entries.into_iter().enumerate() {
             let mut file_entry = archive.by_index(entry_index)?;
             let safe_name = sanitize(name.split('/').last().unwrap_or("page"));
@@ -196,6 +311,12 @@ impl Session {
             copy(&mut file_entry, &mut output)?;
             let thumbnail_path = generate_thumbnail(&target_path).ok();
             if idx == 0 {
+                if let Some(ref thumb) = thumbnail_path {
+                    let cover_name = format!("{}_cover.png", session_id);
+                    let cover_path = covers_root.join(&cover_name);
+                    fs::copy(thumb, &cover_path).ok();
+                    public_cover = Some(cover_path.to_string_lossy().into_owned());
+                }
                 cover_thumbnail = thumbnail_path.clone();
             }
             pages.push(PageEntry {
@@ -217,7 +338,73 @@ impl Session {
             pages,
             file_name,
             cover_thumbnail,
+            cover_public: public_cover,
             last_index: 0,
+            source: "cbz".to_string(),
+            reference: path.to_string_lossy().into_owned(),
+            identifier: format!("cbz:{}", path.to_string_lossy()),
+        })
+    }
+
+    fn from_webtoon(
+        title: String,
+        chapter_url: &str,
+        images: Vec<DownloadedImage>,
+        session_root: &Path,
+        covers_root: &Path,
+        existing_cover: Option<String>,
+    ) -> Result<Self> {
+        let session_id = Uuid::new_v4().to_string();
+        let session_dir = session_root.join(&session_id);
+        fs::create_dir_all(&session_dir)?;
+
+        let mut pages = Vec::with_capacity(images.len());
+        let mut cover_thumbnail = None;
+        let mut public_cover = existing_cover;
+        for (idx, image) in images.into_iter().enumerate() {
+            let safe_label = sanitize(image.label.replace('/', "_").replace(' ', "_"));
+            let ext = if image.extension.starts_with('.') {
+                image.extension.clone()
+            } else {
+                format!(".{}", image.extension)
+            };
+            let file_name = if safe_label.is_empty() {
+                format!("page_{idx}")
+            } else {
+                safe_label
+            };
+            let target_name = format!("{idx:04}_{}{}", file_name, ext);
+            let target_path = session_dir.join(target_name);
+            let mut output = File::create(&target_path)?;
+            output.write_all(&image.bytes)?;
+            let thumbnail_path = generate_thumbnail(&target_path).ok();
+            if idx == 0 {
+                if let Some(ref thumb) = thumbnail_path {
+                    let cover_name = format!("{}_cover.png", session_id);
+                    let cover_path = covers_root.join(&cover_name);
+                    fs::copy(thumb, &cover_path).ok();
+                    public_cover = Some(cover_path.to_string_lossy().into_owned());
+                }
+                cover_thumbnail = thumbnail_path.clone();
+            }
+            pages.push(PageEntry {
+                path: target_path,
+                label: format!("Page {}", idx + 1),
+                thumbnail_path,
+            });
+        }
+
+        Ok(Self {
+            id: session_id,
+            temp_dir: session_dir,
+            pages,
+            file_name: title,
+            cover_thumbnail,
+            cover_public: public_cover,
+            last_index: 0,
+            source: "webtoon".to_string(),
+            reference: chapter_url.to_string(),
+            identifier: format!("webtoon:{}", chapter_url),
         })
     }
 
@@ -240,6 +427,9 @@ impl Session {
                     label: entry.label.clone(),
                 })
                 .collect(),
+            source: self.source.clone(),
+            identifier: self.identifier.clone(),
+            is_webtoon: matches!(self.source.as_str(), "webtoon"),
         }
     }
 
@@ -253,6 +443,7 @@ impl Session {
                 .cover_thumbnail
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
+            source: self.source.clone(),
         }
     }
 
@@ -268,6 +459,12 @@ struct PageEntry {
     thumbnail_path: Option<PathBuf>,
 }
 
+pub(crate) struct DownloadedImage {
+    bytes: Vec<u8>,
+    label: String,
+    extension: String,
+}
+
 #[derive(Serialize)]
 pub struct LoadCbzResponse {
     pub session_id: String,
@@ -276,6 +473,9 @@ pub struct LoadCbzResponse {
     pub last_index: usize,
     pub cover_path: Option<String>,
     pub pages: Vec<PageDescriptor>,
+    pub source: String,
+    pub identifier: String,
+    pub is_webtoon: bool,
 }
 
 #[derive(Serialize)]
@@ -297,10 +497,7 @@ pub struct SessionSummary {
     pub total_pages: usize,
     pub last_index: usize,
     pub cover_path: Option<String>,
-}
-
-fn session_base_dir() -> PathBuf {
-    std::env::temp_dir().join("comicflow")
+    pub source: String,
 }
 
 fn is_supported_image(name: &str) -> bool {
@@ -383,6 +580,100 @@ pub async fn update_progress(
 #[tauri::command]
 pub async fn list_sessions(state: tauri::State<'_, SessionManager>) -> Result<Vec<SessionSummary>, String> {
     Ok(state.list_sessions())
+}
+
+#[tauri::command]
+pub async fn list_progress(state: tauri::State<'_, SessionManager>) -> Result<Vec<ProgressRecord>, String> {
+    state.list_progress().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_progress_entry(
+    id: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<(), String> {
+    state.clear_progress(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_progress_entry(
+    id: String,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<Option<LoadCbzResponse>, String> {
+    let entry = match state.get_progress_entry(&id).map_err(|e| e.to_string())? {
+        Some(entry) => entry,
+        None => return Ok(None),
+    };
+    match entry.source.as_str() {
+        "cbz" => state.restore_cbz_entry(&entry).map_err(|e| e.to_string()),
+        "webtoon" => {
+            let fetcher = WebtoonFetcher::new().map_err(|e| e.to_string())?;
+            let urls = fetcher
+                .fetch_chapter_images(&entry.location)
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut images = Vec::with_capacity(urls.len());
+            for (idx, url) in urls.iter().enumerate() {
+                let bytes = fetcher.fetch_image_bytes(url).await.map_err(|e| e.to_string())?;
+                images.push(DownloadedImage {
+                    bytes,
+                    label: format!("Page {}", idx + 1),
+                    extension: infer_extension(url),
+                });
+            }
+            state
+                .load_webtoon_session(entry.label.clone(), entry.location.clone(), images)
+                .map(Some)
+                .map_err(|e| e.to_string())
+        }
+        _ => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn fetch_webtoon_catalog(catalogUrl: String) -> Result<Vec<CatalogChapter>, String> {
+    println!("[ComicFlow] fetch_webtoon_catalog -> {catalogUrl}");
+    let fetcher = WebtoonFetcher::new().map_err(|e| e.to_string())?;
+    match fetcher.fetch_catalog(&catalogUrl).await {
+        Ok(chapters) => {
+            println!("[ComicFlow] catalog ok: {} chapitres", chapters.len());
+            Ok(chapters)
+        }
+        Err(err) => {
+            println!("[ComicFlow] catalog error: {err}");
+            Err(err.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn load_webtoon(
+    chapterUrl: String,
+    title: Option<String>,
+    state: tauri::State<'_, SessionManager>,
+) -> Result<LoadCbzResponse, String> {
+    println!("[ComicFlow] load_webtoon -> {chapterUrl}");
+    let fetcher = WebtoonFetcher::new().map_err(|e| e.to_string())?;
+    let urls = fetcher
+        .fetch_chapter_images(&chapterUrl)
+        .await
+        .map_err(|e| {
+            println!("[ComicFlow] chapter error: {e}");
+            e.to_string()
+        })?;
+    let mut images = Vec::with_capacity(urls.len());
+    for (idx, url) in urls.iter().enumerate() {
+        let bytes = fetcher.fetch_image_bytes(url).await.map_err(|e| e.to_string())?;
+        images.push(DownloadedImage {
+            bytes,
+            label: format!("Page {}", idx + 1),
+            extension: infer_extension(url),
+        });
+    }
+    let resolved_title = title.unwrap_or_else(|| format!("Chapitre webtoon {}", chapterUrl));
+    state
+        .load_webtoon_session(resolved_title, chapterUrl, images)
+        .map_err(|e| e.to_string())
 }
 
 fn touch_session(order: &mut VecDeque<String>, session_id: &str) {
